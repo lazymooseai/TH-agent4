@@ -1,6 +1,7 @@
 import streamlit as st
 from datetime import datetime
 import pytz
+import requests # UUSI: Mahdollistaa API-haut ulkomaailmaan
 
 # --- KONFIGURAATIO ---
 st.set_page_config(page_title="TH Agentti", page_icon="🚕", layout="centered", initial_sidebar_state="collapsed")
@@ -14,22 +15,80 @@ if 'event_states' not in st.session_state:
         "Ooppera": "NORMAALI"
     }
 
-# Tilanhallinta junien asemien valintaan
 if 'selected_station' not in st.session_state:
     st.session_state.selected_station = "HELSINKI"
 
 def update_status(event_name, new_status):
     st.session_state.event_states[event_name] = new_status
 
-# --- CSS INJEKTIO (LOVABLE UI PAKOTUS) ---
+# --- DIGITRAFFIC API (LIVE-JUNAT) ---
+@st.cache_data(ttl=60) # Koodi tallentaa datan minuutiksi muistiin, ettei API ylikuormitu joka painalluksella
+def fetch_live_trains(station_name):
+    """
+    Hakee Fintrafficin avoimesta rajapinnasta saapuvat kaukojunat.
+    """
+    station_codes = {"HELSINKI": "HKI", "PASILA": "PSL", "TIKKURILA": "TKL"}
+    code = station_codes.get(station_name, "HKI")
+    
+    # Haetaan 20 seuraavaa saapuvaa junaa
+    url = f"https://rata.digitraffic.fi/api/v1/live-trains/station/{code}?arriving_trains=20&departing_trains=0&include_nonstopping=false"
+    
+    try:
+        res = requests.get(url, timeout=5)
+        if res.status_code != 200:
+            return [{"id": "Virhe", "route": "API alhaalla", "time": "--:--", "status": f"Koodi {res.status_code}"}]
+            
+        trains = res.json()
+        results = []
+        
+        for t in trains:
+            # Suodatetaan vain kaukoliikenne
+            if t.get('trainCategory') == 'Long-distance':
+                # Etsitään oikea rivi aseman kohdalta
+                for row in t.get('timeTableRows', []):
+                    if row.get('stationShortCode') == code and row.get('type') == 'ARRIVAL':
+                        # Aikaleimat ovat muodossa 2026-03-10T15:30:00.000Z (UTC), muutetaan Helsinki-aikaan
+                        scheduled_utc = datetime.fromisoformat(row['scheduledTime'].replace('Z', '+00:00'))
+                        scheduled_hel = scheduled_utc.astimezone(HELSINKI_TZ)
+                        
+                        # Tutkitaan onko juna myöhässä (LiveEstimate)
+                        live_estimate = row.get('liveEstimateTime')
+                        if live_estimate:
+                            est_utc = datetime.fromisoformat(live_estimate.replace('Z', '+00:00'))
+                            est_hel = est_utc.astimezone(HELSINKI_TZ)
+                            
+                            # Jos myöhässä yli 2 min, näytetään punaisella
+                            diff_minutes = (est_hel - scheduled_hel).total_seconds() / 60
+                            if diff_minutes > 2:
+                                status = f"<span style='color: #F87171;'>Myöhässä (Arvio {est_hel.strftime('%H:%M')})</span>"
+                            else:
+                                status = "Aikataulussa"
+                        else:
+                            status = "Aikataulussa"
+                            
+                        results.append({
+                            "id": f"{t.get('trainType', '')} {t.get('trainNumber', '')}",
+                            "route": "Saapuu",
+                            "time": scheduled_hel.strftime('%H:%M'),
+                            "status": status,
+                            "sort_time": scheduled_hel
+                        })
+                        break # Siirrytään seuraavaan junaan
+                        
+        # Järjestetään aikataulun mukaan ja otetaan 4 seuraavaa
+        results.sort(key=lambda x: x['sort_time'])
+        return results[:4]
+        
+    except Exception as e:
+        return [{"id": "Yhteysvirhe", "route": "Ei dataa", "time": "--:--", "status": "Fintraffic yhteys poikki"}]
+
+# --- CSS INJEKTIO ---
 st.markdown("""
 <style>
-    /* Päätausta ja fontti */
     .stApp { background-color: #0F111A; color: #E2E8F0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
     #MainMenu, header, footer {visibility: hidden;}
     .block-container { padding-top: 1rem; padding-bottom: 5rem; }
 
-    /* Yläpalkki (Aika ja Sää) */
     .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
     .time-display { font-size: 2.5rem; font-weight: 800; color: #FFFFFF; letter-spacing: -1px; }
     .time-display span { color: #4ADE80; }
@@ -37,43 +96,31 @@ st.markdown("""
     .weather-temp { font-size: 1.2rem; font-weight: 700; color: #FFFFFF; }
     .weather-desc { font-size: 0.7rem; color: #94A3B8; text-transform: uppercase; letter-spacing: 1px;}
 
-    /* Korttien perusrakenne */
     .th-card {
-        background: #191B24;
-        border: 1px solid #2D313E;
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 12px;
-        position: relative;
+        background: #191B24; border: 1px solid #2D313E; border-radius: 12px;
+        padding: 16px; margin-bottom: 12px; position: relative;
     }
-    .th-card::before {
-        content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
-        background: #4ADE80; border-radius: 12px 0 0 12px;
-    }
+    .th-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: #4ADE80; border-radius: 12px 0 0 12px; }
     .th-card.red-border::before { background: #F87171; }
     .th-card.yellow-border::before { background: #FBBF24; }
 
-    /* Korttien typografia */
     .card-title { font-size: 1.1rem; font-weight: 700; color: #FFFFFF; margin-bottom: 2px; z-index: 2; position: relative;}
     .card-subtitle { font-size: 0.85rem; color: #94A3B8; margin-bottom: 8px; z-index: 2; position: relative;}
     .card-time { position: absolute; right: 16px; top: 16px; font-size: 1.8rem; font-weight: 800; color: #4ADE80; letter-spacing: -1px; z-index: 2;}
     .card-time.red-text { color: #F87171; }
     .card-time.yellow-text { color: #FBBF24; }
     
-    /* Tagit ja Badget */
     .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.65rem; font-weight: 800; text-transform: uppercase; margin-top: 8px; z-index: 2; position: relative;}
     .badge-premium { background: rgba(251, 191, 36, 0.15); color: #FBBF24; }
     .badge-fire { background: rgba(248, 113, 113, 0.15); color: #F87171; }
     .badge-info { background: rgba(148, 163, 184, 0.15); color: #94A3B8; }
 
-    /* Live-indikaattori */
-    .live-dot { height: 8px; width: 8px; background-color: #4ADE80; border-radius: 50%; display: inline-block; margin-right: 4px; }
+    .live-dot { height: 8px; width: 8px; background-color: #4ADE80; border-radius: 50%; display: inline-block; margin-right: 4px; animation: pulse 2s infinite;}
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
     
-    /* Ulkoinen linkki (Nappula koko kortin päällä) */
     .card-link { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; text-decoration: none; }
     .link-icon { position: absolute; right: 16px; bottom: 16px; color: #64748B; font-size: 1.2rem; z-index: 2;}
 
-    /* Alueen Otsikot */
     .section-title { font-size: 0.85rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; margin: 24px 0 12px 0; letter-spacing: 1px; display: flex; align-items: center;}
 </style>
 """, unsafe_allow_html=True)
@@ -97,10 +144,9 @@ st.markdown(f"""
 
 st.markdown('<a href="https://ilmatieteenlaitos.fi/sade-ja-pilvialueet?area=etela-suomi" target="_blank" style="color: #4ADE80; font-size: 0.8rem; text-decoration: none; z-index: 3; position: relative;">Avaa Sadetutka ↗</a>', unsafe_allow_html=True)
 
-# --- UUSI OSIO: JUNAT (KAUKO) ---
+# --- 2. LIVE-JUNAT (FINTRAFFIC API) ---
 st.markdown('<div class="section-title">🚆 JUNAT (KAUKO)</div>', unsafe_allow_html=True)
 
-# Asemien valintapainikkeet (Lovable-tyylinen toggle)
 col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("HELSINKI", use_container_width=True, type="primary" if st.session_state.selected_station == "HELSINKI" else "secondary"):
@@ -115,7 +161,6 @@ with col3:
         st.session_state.selected_station = "TIKKURILA"
         st.rerun()
 
-# Määritetään aktiivisen aseman URL
 station_urls = {
     "HELSINKI": "https://www.vr.fi/radalla?station=HKI&direction=ARRIVAL&stationFilters=%7B%22trainCategory%22%3A%22Long-distance%22%7D",
     "PASILA": "https://www.vr.fi/radalla?station=PSL&direction=ARRIVAL&stationFilters=%7B%22trainCategory%22%3A%22Long-distance%22%7D",
@@ -123,27 +168,31 @@ station_urls = {
 }
 active_url = station_urls[st.session_state.selected_station]
 
-# Visuaalinen indikaattori valitulle asemalle ja data (Dummy-data simuloimaan liveä)
-st.markdown(f"<p style='color: #94A3B8; font-size: 0.8rem;'>Näytetään kaukoliikenne: <strong>{st.session_state.selected_station}</strong></p>", unsafe_allow_html=True)
+# Datahaku (Reaaliaikainen)
+st.markdown(f"<p style='color: #94A3B8; font-size: 0.8rem;'>Haetaan livenä: <strong>{st.session_state.selected_station}</strong></p>", unsafe_allow_html=True)
 
-dummy_trains = [
-    {"id": "IC 24", "route": "Rovaniemi", "time": "17:39", "status": "Aikataulussa"},
-    {"id": "IC 50", "route": "VS -> HKI", "time": "18:39", "status": "Aikataulussa"},
-    {"id": "IC 68", "route": "Oulu", "time": "18:44", "status": "Aikataulussa"}
-]
+live_trains = fetch_live_trains(st.session_state.selected_station)
 
-for train in dummy_trains:
-    st.markdown(f"""
-    <div class="th-card">
-        <a href="{active_url}" target="_blank" class="card-link"></a>
-        <div class="card-title">{train['id']} {train['route']} <span class="live-dot" style="margin-left: 8px;"></span><span style="font-size: 0.6rem; color: #4ADE80;">LIVE</span></div>
-        <div class="card-subtitle">{train['status']}</div>
-        <div class="card-time">{train['time']}</div>
-        <div class="link-icon">↗</div>
-    </div>
-    """, unsafe_allow_html=True)
+if not live_trains:
+    st.markdown("<p style='color:#94A3B8'>Ei saapuvaa kaukoliikennettä seuraavan 2 tunnin sisällä.</p>", unsafe_allow_html=True)
+else:
+    for train in live_trains:
+        # Pieni visuaalinen hienosäätö myöhästymisille
+        border_class = "red-border" if "Myöhässä" in train['status'] else ""
+        time_class = "red-text" if "Myöhässä" in train['status'] else ""
+        
+        st.markdown(f"""
+        <div class="th-card {border_class}">
+            <a href="{active_url}" target="_blank" class="card-link"></a>
+            <div class="card-title">{train['id']} {train['route']} <span class="live-dot" style="margin-left: 8px;"></span><span style="font-size: 0.6rem; color: #4ADE80;">LIVE</span></div>
+            <div class="card-subtitle">{train['status']}</div>
+            <div class="card-time {time_class}">{train['time']}</div>
+            <div class="link-icon">↗</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-# --- SATAMAT (MERILIIKENNE) ---
+
+# --- 3. SATAMAT (MERILIIKENNE) ---
 st.markdown('<div class="section-title">⛴️ SATAMAT (LAIVAT)</div>', unsafe_allow_html=True)
 
 st.markdown("""
@@ -157,10 +206,9 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# --- TAPAHTUMAT TÄNÄÄN ---
+# --- 4. TAPAHTUMAT TÄNÄÄN ---
 st.markdown('<div class="section-title">🎫 TAPAHTUMAT TÄNÄÄN</div>', unsafe_allow_html=True)
 
-# Asiakirjan mukaiset päivitetyt linkit
 events = [
     {
         "id": "Messukeskus",
@@ -196,7 +244,7 @@ events = [
         "badge_text": "PREMIUM (PUKU PÄÄLLÄ)",
         "border_class": "yellow-border",
         "time_class": "yellow-text",
-        "url": "https://oopperabaletti.fi/ohjelmisto-ja-liput/"
+        "url": "https://oopperabaletti.fi/kalenteri/"
     }
 ]
 
