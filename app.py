@@ -7,7 +7,6 @@ st.set_page_config(page_title="TH Agentti", page_icon="🚕", layout="centered",
 HELSINKI_TZ = pytz.timezone('Europe/Helsinki')
 
 # --- TILANHALLINTA (KUSKIN INTERAKTIO) ---
-# Alustetaan tapahtumien tilat muistiin, jotta kuskin tekemät muutokset pysyvät ruudulla
 if 'event_states' not in st.session_state:
     st.session_state.event_states = {
         "Messukeskus": "NORMAALI",
@@ -23,15 +22,13 @@ st.markdown("""
 <style>
     /* Päätausta ja fontti */
     .stApp { background-color: #0F111A; color: #E2E8F0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
-    
-    /* Piilotetaan turhat Streamlit-elementit */
     #MainMenu, header, footer {visibility: hidden;}
     .block-container { padding-top: 1rem; padding-bottom: 5rem; }
 
     /* Yläpalkki (Aika ja Sää) */
     .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
     .time-display { font-size: 2.5rem; font-weight: 800; color: #FFFFFF; letter-spacing: -1px; }
-    .time-display span { color: #4ADE80; } /* Vihreä vilkku/korostus */
+    .time-display span { color: #4ADE80; }
     .weather-widget { background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 8px; text-align: right; }
     .weather-temp { font-size: 1.2rem; font-weight: 700; color: #FFFFFF; }
     .weather-desc { font-size: 0.7rem; color: #94A3B8; text-transform: uppercase; letter-spacing: 1px;}
@@ -53,14 +50,14 @@ st.markdown("""
     .th-card.yellow-border::before { background: #FBBF24; }
 
     /* Korttien typografia */
-    .card-title { font-size: 1.1rem; font-weight: 700; color: #FFFFFF; margin-bottom: 2px; }
-    .card-subtitle { font-size: 0.85rem; color: #94A3B8; margin-bottom: 8px; }
-    .card-time { position: absolute; right: 16px; top: 16px; font-size: 1.8rem; font-weight: 800; color: #4ADE80; letter-spacing: -1px;}
+    .card-title { font-size: 1.1rem; font-weight: 700; color: #FFFFFF; margin-bottom: 2px; z-index: 2; position: relative;}
+    .card-subtitle { font-size: 0.85rem; color: #94A3B8; margin-bottom: 8px; z-index: 2; position: relative;}
+    .card-time { position: absolute; right: 16px; top: 16px; font-size: 1.8rem; font-weight: 800; color: #4ADE80; letter-spacing: -1px; z-index: 2;}
     .card-time.red-text { color: #F87171; }
     .card-time.yellow-text { color: #FBBF24; }
     
     /* Tagit ja Badget */
-    .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.65rem; font-weight: 800; text-transform: uppercase; margin-top: 8px;}
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.65rem; font-weight: 800; text-transform: uppercase; margin-top: 8px; z-index: 2; position: relative;}
     .badge-premium { background: rgba(251, 191, 36, 0.15); color: #FBBF24; }
     .badge-fire { background: rgba(248, 113, 113, 0.15); color: #F87171; }
     .badge-info { background: rgba(148, 163, 184, 0.15); color: #94A3B8; }
@@ -70,20 +67,16 @@ st.markdown("""
     
     /* Ulkoinen linkki (Nappula koko kortin päällä) */
     .card-link { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; text-decoration: none; }
-    .link-icon { position: absolute; right: 16px; bottom: 16px; color: #64748B; font-size: 1.2rem; }
+    .link-icon { position: absolute; right: 16px; bottom: 16px; color: #64748B; font-size: 1.2rem; z-index: 2;}
 
     /* Alueen Otsikot */
     .section-title { font-size: 0.85rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; margin: 24px 0 12px 0; letter-spacing: 1px; }
-
 </style>
 """, unsafe_allow_html=True)
 
-# --- 1. YLÄPALKKI & SÄÄ (KYSYNTÄKERROIN) ---
+# --- 1. YLÄPALKKI & SÄÄ ---
 now = datetime.now(HELSINKI_TZ)
 time_str = now.strftime("%H") + "<span>:</span>" + now.strftime("%M")
-
-# Säätilan datahaun paikka. Nyt staattinen demo.
-# "Sade myy kyytejä. Älä katso ennustetta, katso tutkaa."
 weather_status = "SADE ALKAMASSA" 
 demand_multiplier = "1.4x"
 
@@ -98,20 +91,20 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Tutkalinkki
-st.markdown('<a href="https://ilmatieteenlaitos.fi/sade-ja-pilvialueet?area=etela-suomi" target="_blank" style="color: #4ADE80; font-size: 0.8rem; text-decoration: none;">Avaa Sadetutka ↗</a>', unsafe_allow_html=True)
+# Tutkalinkki: Ilmatieteen laitos, tutka Etelä-Suomi
+st.markdown('<a href="https://ilmatieteenlaitos.fi/sade-ja-pilvialueet?area=etela-suomi" target="_blank" style="color: #4ADE80; font-size: 0.8rem; text-decoration: none; z-index: 3; position: relative;">Avaa Sadetutka ↗</a>', unsafe_allow_html=True)
 
 # --- 2. SATAMAT (MERILIIKENNE) ---
 st.markdown('<div class="section-title">⛴️ Satamat (Laivat)</div>', unsafe_allow_html=True)
 
-# Huomioidaan datahäiriö Eckerö Linen T2 lokaatiosta koodissa valmiiksi.
+# Linkki Averio-laivakarttaan
 st.markdown("""
 <div class="th-card">
-    <a href="https://portofhelsinki.fi/matkustajille/matkustajatietoa/lahtevat-ja-saapuvat-matkustajalaivat/" target="_blank" class="card-link"></a>
-    <div class="card-title">MS Finlandia <span class="live-dot" style="margin-left: 8px;"></span><span style="font-size: 0.6rem; color: #4ADE80;">LIVE</span></div>
-    <div class="card-subtitle">Tulossa: ~2000 hlö<br>Eckerö Line • Länsiterminaali T2 (Ei Vuosaari)</div>
-    <div class="card-time">14:30</div>
-    <div class="badge badge-info">LÄHDE: PORT OF HELSINKI</div>
+    <a href="https://averio.fi/laivat/" target="_blank" class="card-link"></a>
+    <div class="card-title">MyStar <span class="live-dot" style="margin-left: 8px;"></span><span style="font-size: 0.6rem; color: #4ADE80;">LIVE</span></div>
+    <div class="card-subtitle">Tulossa: ~2000 hlö<br>Tallink • Länsiterminaali T2</div>
+    <div class="card-time">18:30</div>
+    <div class="badge badge-info">LÄHDE: AVERIO.FI</div>
     <div class="link-icon">↗</div>
 </div>
 """, unsafe_allow_html=True)
@@ -119,19 +112,19 @@ st.markdown("""
 # --- 3. TAPAHTUMAT TÄNÄÄN ---
 st.markdown('<div class="section-title">🎫 Tapahtumat Tänään & Tilanne</div>', unsafe_allow_html=True)
 
-# Tietokanta tapahtumille
+# Tarkat linkit tapahtumiin
 events = [
     {
-        "id": "Ooppera",
-        "title": "Oopperaesitys (Tosca)",
-        "location": "Kansallisooppera",
-        "time": "19:00",
-        "duration": "180 min",
-        "badge_class": "badge-premium",
-        "badge_text": "PREMIUM (PUKU PÄÄLLÄ)",
-        "border_class": "yellow-border",
-        "time_class": "yellow-text",
-        "url": "https://oopperabaletti.fi/ohjelmisto-ja-liput/"
+        "id": "Messukeskus",
+        "title": "Kevätmessut",
+        "location": "Messukeskus",
+        "time": "17:00",
+        "duration": "Ovet sulkeutuvat",
+        "badge_class": "badge-info",
+        "badge_text": "SUURI TAPAHTUMA",
+        "border_class": "",
+        "time_class": "",
+        "url": "https://messukeskus.com/kavijalle/tapahtumat/tapahtumakalenteri"
     },
     {
         "id": "Jäähalli",
@@ -146,24 +139,22 @@ events = [
         "url": "https://liiga.fi/fi/ottelut"
     },
     {
-        "id": "Messukeskus",
-        "title": "Kevätmessut",
-        "location": "Messukeskus",
-        "time": "17:00",
-        "duration": "Ovet sulkeutuvat",
-        "badge_class": "badge-info",
-        "badge_text": "SUURI TAPAHTUMA",
-        "border_class": "",
-        "time_class": "",
-        "url": "https://messukeskus.com/kavijalle/tapahtumat/tapahtumakalenteri"
+        "id": "Ooppera",
+        "title": "Oopperaesitys (Tosca)",
+        "location": "Kansallisooppera",
+        "time": "19:00",
+        "duration": "180 min",
+        "badge_class": "badge-premium",
+        "badge_text": "PREMIUM (PUKU PÄÄLLÄ)",
+        "border_class": "yellow-border",
+        "time_class": "yellow-text",
+        "url": "https://oopperabaletti.fi/kalenteri/"
     }
 ]
 
-# Renderöidään tapahtumat ja niiden ohjauspainikkeet
 for ev in events:
     current_state = st.session_state.event_states[ev["id"]]
     
-    # Valitaan väritys kuljettajan asettaman tilan mukaan
     state_display = ""
     if current_state == "JONO!":
         state_display = '<span style="color: #F87171; font-weight: bold; margin-left: 10px;">[🚕 JONOA]</span>'
@@ -182,8 +173,7 @@ for ev in events:
     </div>
     """, unsafe_allow_html=True)
     
-    # --- KUSKIN INTERAKTIO (TILAN VAIHTO) ---
-    # Luodaan Streamlitin omat napit kortin alle tilan päivittämistä varten
+    # Kuskin ohjauspainikkeet tilan päivittämiseen
     c1, c2, c3 = st.columns(3)
     with c1:
         if st.button("✓ OHI", key=f"btn_ohi_{ev['id']}", use_container_width=True, type="secondary" if current_state != "OHI" else "primary"):
@@ -200,6 +190,4 @@ for ev in events:
             
     st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
 
-# --- ALATUNNISTE ---
 st.divider()
-st.caption("Data sources: Finavia, Port of Helsinki, VR, HSL, Event APIs. [span_4](start_span)System strictly enforcing event end-times for dispatch[span_4](end_span). [span_5](start_span)Weather multiplier active[span_5](end_span).")
