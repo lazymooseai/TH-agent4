@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import pytz
 
 # --- KONFIGURAATIO ---
-st.set_page_config(page_title="TH Agentti", page_icon="🚕", layout="mobile")
+st.set_page_config(page_title="TH Agentti", page_icon="🚕", layout="centered")
 HELSINKI_TZ = pytz.timezone('Europe/Helsinki')
 
 # --- SALAUS JA KULUNVALVONTA ---
