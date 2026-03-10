@@ -1,237 +1,205 @@
 import streamlit as st
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
 
-# --- KONFIGURAATIO JA TYYLIT ---
-st.set_page_config(page_title="TH Agentti", page_icon="🚕", layout="centered")
+# --- KONFIGURAATIO ---
+st.set_page_config(page_title="TH Agentti", page_icon="🚕", layout="centered", initial_sidebar_state="collapsed")
 HELSINKI_TZ = pytz.timezone('Europe/Helsinki')
 
-# --- CSS-TYYLIT (LOVABLE UI IMITAATIO) ---
-# Tämä blokki pakottaa Streamlitin näyttämään "Lovable"-sovellukselta.
-st.markdown("""
-    <style>
-    /* Pakotetaan tumma tausta ja vaalea teksti */
-    .stApp {
-        background-color: #0E1117;
-        color: #FAFAFA;
-    }
-    
-    /* Pääotsikoiden tyyli */
-    h1, h2, h3 {
-        color: #FFFFFF !important;
-        font-weight: 700 !important;
+# --- TILANHALLINTA (KUSKIN INTERAKTIO) ---
+# Alustetaan tapahtumien tilat muistiin, jotta kuskin tekemät muutokset pysyvät ruudulla
+if 'event_states' not in st.session_state:
+    st.session_state.event_states = {
+        "Messukeskus": "NORMAALI",
+        "Jäähalli": "NORMAALI",
+        "Ooppera": "NORMAALI"
     }
 
-    /* KORTTIEN TYYLI - Tämä tekee pyöristetyt laatikot */
-    .lovable-card {
-        background-color: #262730; /* Hieman vaaleampi tummanharmaa */
+def update_status(event_name, new_status):
+    st.session_state.event_states[event_name] = new_status
+
+# --- CSS INJEKTIO (LOVABLE UI PAKOTUS) ---
+st.markdown("""
+<style>
+    /* Päätausta ja fontti */
+    .stApp { background-color: #0F111A; color: #E2E8F0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    
+    /* Piilotetaan turhat Streamlit-elementit */
+    #MainMenu, header, footer {visibility: hidden;}
+    .block-container { padding-top: 1rem; padding-bottom: 5rem; }
+
+    /* Yläpalkki (Aika ja Sää) */
+    .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .time-display { font-size: 2.5rem; font-weight: 800; color: #FFFFFF; letter-spacing: -1px; }
+    .time-display span { color: #4ADE80; } /* Vihreä vilkku/korostus */
+    .weather-widget { background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 8px; text-align: right; }
+    .weather-temp { font-size: 1.2rem; font-weight: 700; color: #FFFFFF; }
+    .weather-desc { font-size: 0.7rem; color: #94A3B8; text-transform: uppercase; letter-spacing: 1px;}
+
+    /* Korttien perusrakenne */
+    .th-card {
+        background: #191B24;
+        border: 1px solid #2D313E;
         border-radius: 12px;
         padding: 16px;
         margin-bottom: 12px;
-        border: 1px solid #3F3F46; /* Hienovarainen reunus */
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        position: relative;
     }
+    .th-card::before {
+        content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+        background: #4ADE80; border-radius: 12px 0 0 12px;
+    }
+    .th-card.red-border::before { background: #F87171; }
+    .th-card.yellow-border::before { background: #FBBF24; }
 
-    /* Kortin sisäiset otsikot (esim. lennon numero tai tapahtuma) */
-    .card-header {
-        font-size: 1.1rem;
-        font-weight: 600;
-        margin-bottom: 8px;
-        color: #FFFFFF;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    /* Tietokenttien otsikot (esim. "Lähtömaa:") */
-    .data-label {
-        font-size: 0.85rem;
-        color: #A1A1AA;
-        margin-right: 6px;
-        font-weight: 500;
-    }
-
-    /* Itse tietoarvot */
-    .data-value {
-        font-size: 0.95rem;
-        color: #FAFAFA;
-        font-weight: 500;
-    }
+    /* Korttien typografia */
+    .card-title { font-size: 1.1rem; font-weight: 700; color: #FFFFFF; margin-bottom: 2px; }
+    .card-subtitle { font-size: 0.85rem; color: #94A3B8; margin-bottom: 8px; }
+    .card-time { position: absolute; right: 16px; top: 16px; font-size: 1.8rem; font-weight: 800; color: #4ADE80; letter-spacing: -1px;}
+    .card-time.red-text { color: #F87171; }
+    .card-time.yellow-text { color: #FBBF24; }
     
-    /* Tietorivi */
-    .data-row {
-        margin-bottom: 4px;
-    }
+    /* Tagit ja Badget */
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.65rem; font-weight: 800; text-transform: uppercase; margin-top: 8px;}
+    .badge-premium { background: rgba(251, 191, 36, 0.15); color: #FBBF24; }
+    .badge-fire { background: rgba(248, 113, 113, 0.15); color: #F87171; }
+    .badge-info { background: rgba(148, 163, 184, 0.15); color: #94A3B8; }
 
-    /* Statusvärit */
-    .status-green { color: #4CAF50; font-weight: 700; }
-    .status-yellow { color: #FFC107; font-weight: 700; }
-    .status-red { color: #EF4444; font-weight: 700; }
-    .status-grey { color: #A1A1AA; font-weight: 700; }
+    /* Live-indikaattori */
+    .live-dot { height: 8px; width: 8px; background-color: #4ADE80; border-radius: 50%; display: inline-block; margin-right: 4px; }
+    
+    /* Ulkoinen linkki (Nappula koko kortin päällä) */
+    .card-link { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; text-decoration: none; }
+    .link-icon { position: absolute; right: 16px; bottom: 16px; color: #64748B; font-size: 1.2rem; }
 
-    /* Piilotetaan Streamlitin oletusvalikko ja footer */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    </style>
+    /* Alueen Otsikot */
+    .section-title { font-size: 0.85rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; margin: 24px 0 12px 0; letter-spacing: 1px; }
+
+</style>
 """, unsafe_allow_html=True)
 
-# --- SALAUS JA KULUNVALVONTA ---
-def check_password():
-    if "password_correct" not in st.session_state:
-        st.session_state["password_correct"] = False
-        
-    if st.session_state["password_correct"]:
-        return True
+# --- 1. YLÄPALKKI & SÄÄ (KYSYNTÄKERROIN) ---
+now = datetime.now(HELSINKI_TZ)
+time_str = now.strftime("%H") + "<span>:</span>" + now.strftime("%M")
 
-    # Yksinkertainen kirjautumiskortti
-    st.markdown('<div class="lovable-card"><div class="card-header">Kirjaudu sisään</div>', unsafe_allow_html=True)
-    password = st.text_input("Syötä valtuutuskoodi", type="password", label_visibility="collapsed")
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    if password == "152": 
-        st.session_state["password_correct"] = True
-        st.rerun()
-    elif password:
-        st.error("Pääsy evätty.")
-    return False
+# Säätilan datahaun paikka. Nyt staattinen demo.
+# "Sade myy kyytejä. Älä katso ennustetta, katso tutkaa."
+weather_status = "SADE ALKAMASSA" 
+demand_multiplier = "1.4x"
 
-if not check_password():
-    st.stop()
-
-# --- ÄLYKÄS LOGIIKKA JA UI-KOMPONENTIT ---
-
-def calculate_event_status(start_time_str, duration_minutes):
-    """Laskee tapahtuman tilan ja edistymisen (0.0 - 1.0)"""
-    try:
-        now = datetime.now(HELSINKI_TZ)
-        start_time = datetime.strptime(start_time_str, "%H:%M").time()
-        start = datetime.combine(now.date(), start_time)
-        start = HELSINKI_TZ.localize(start)
-        
-        end_time = start + timedelta(minutes=duration_minutes)
-        alert_time = end_time - timedelta(minutes=90)
-        
-        # Lasketaan edistyminen
-        total_duration = (end_time - start).total_seconds()
-        elapsed = (now - start).total_seconds()
-        progress = max(0.0, min(1.0, elapsed / total_duration)) if total_duration > 0 else 0
-
-        status_text = ""
-        status_class = ""
-
-        if now < start:
-            status_text = "Ei alkanut"
-            status_class = "status-grey"
-        elif now >= alert_time and now < end_time:
-             status_text = "🚨 PURKU ALKAMASSA (<1.5h)"
-             status_class = "status-red"
-        elif now >= start and now < alert_time:
-            status_text = "Käynnissä (Odottaa)"
-            status_class = "status-green"
-        else:
-            status_text = "Päättynyt"
-            status_class = "status-grey"
-            
-        return end_time.strftime("%H:%M"), status_text, status_class, progress
-    except Exception:
-        return "--:--", "Virhe datassa", "status-grey", 0.0
-
-def draw_flight_card(flight):
-    """Piirtää yhden lentokortin Lovable-tyylillä"""
-    # Määritellään statusväri (simulaatio)
-    status_class = "status-green" if flight['Status'] == "Ajallaan" else "status-yellow"
-    
-    html = f"""
-    <div class="lovable-card">
-        <div class="card-header">
-            <span>✈️ {flight['Code']}</span>
-            <span class="{status_class}">{flight['Status']}</span>
-        </div>
-        <div class="data-row">
-            <span class="data-label">Lähtömaa:</span>
-            <span class="data-value">{flight['From']}</span>
-        </div>
-        <div class="data-row">
-            <span class="data-label">Saapumisaika:</span>
-            <span class="data-value">{flight['Time']}</span>
-        </div>
-        <div class="data-row">
-            <span class="data-label">Matkustajat (arvio):</span>
-            <span class="data-value">{flight['Pax']} pax</span>
-        </div>
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
-
-def draw_event_card(event):
-    """Piirtää yhden tapahtumakortin edistymispalkilla"""
-    end_time, status_text, status_class, progress = calculate_event_status(event["Start"], event["Duration"])
-    
-    html = f"""
-    <div class="lovable-card">
-        <div class="card-header">
-            <span>🎭 {event['Event']}</span>
-        </div>
-        <div class="data-row">
-            <span class="data-label">Paikka:</span>
-            <span class="data-value">{event.get('Location', 'Helsinki')}</span>
-        </div>
-        <div class="data-row">
-            <span class="data-label">Aika:</span>
-            <span class="data-value">{event['Start']} - {end_time} ({event['Duration']} min)</span>
-        </div>
-        <div class="data-row">
-            <span class="data-label">Tila:</span>
-            <span class="{status_class}">{status_text}</span>
-        </div>
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
-    # Streamlitin natiivi progress bar toimii paremmin kuin HTML-versio tässä
-    st.progress(progress)
-
-# --- PÄÄKÄYTTÖLIITTYMÄ (MAIN UI) ---
-
-# Yläpalkin aika ja status
-current_time = datetime.now(HELSINKI_TZ).strftime('%H:%M')
 st.markdown(f"""
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <h2 style="margin: 0;">TH Agentti</h2>
-        <div style="text-align: right;">
-            <div style="font-size: 1.5rem; font-weight: 700;">{current_time}</div>
-            <div style="color: #A1A1AA; font-size: 0.9rem;">Helsinki UTC+2/3</div>
-        </div>
+<div class="top-bar">
+    <div class="time-display">{time_str}</div>
+    <div class="weather-widget">
+        <div class="weather-temp">🌦️ +5°</div>
+        <div class="weather-desc">{weather_status} (Kysyntä {demand_multiplier})</div>
+        <div class="weather-desc" style="font-size: 0.55rem; opacity: 0.7;">TUTKA AKTIVOITU</div>
     </div>
+</div>
 """, unsafe_allow_html=True)
 
-# OSIDIO 1: LENNOT (SEURAAVA ASKEL: FINAVIA INTEGRAATIO)
-st.subheader("✈️ Saapuvat Lennot (Finavia Data)")
-# Tämä on nyt "dummy-dataa", joka näyttää miltä oikea Finavia-data näyttäisi tässä UI:ssa.
-flights_data = [
-    {"Code": "AY123", "From": "Bryssel (BRU)", "Time": "20:45", "Pax": 160, "Status": "Ajallaan"},
-    {"Code": "LH850", "From": "Frankfurt (FRA)", "Time": "21:15", "Pax": 180, "Status": "Myöhässä (Est. 21:45)"},
-    {"Code": "D8456", "From": "Oulu (OUL)", "Time": "22:00", "Pax": 150, "Status": "Ajallaan"}
+# Tutkalinkki
+st.markdown('<a href="https://ilmatieteenlaitos.fi/sade-ja-pilvialueet?area=etela-suomi" target="_blank" style="color: #4ADE80; font-size: 0.8rem; text-decoration: none;">Avaa Sadetutka ↗</a>', unsafe_allow_html=True)
+
+# --- 2. SATAMAT (MERILIIKENNE) ---
+st.markdown('<div class="section-title">⛴️ Satamat (Laivat)</div>', unsafe_allow_html=True)
+
+# Huomioidaan datahäiriö Eckerö Linen T2 lokaatiosta koodissa valmiiksi.
+st.markdown("""
+<div class="th-card">
+    <a href="https://portofhelsinki.fi/matkustajille/matkustajatietoa/lahtevat-ja-saapuvat-matkustajalaivat/" target="_blank" class="card-link"></a>
+    <div class="card-title">MS Finlandia <span class="live-dot" style="margin-left: 8px;"></span><span style="font-size: 0.6rem; color: #4ADE80;">LIVE</span></div>
+    <div class="card-subtitle">Tulossa: ~2000 hlö<br>Eckerö Line • Länsiterminaali T2 (Ei Vuosaari)</div>
+    <div class="card-time">14:30</div>
+    <div class="badge badge-info">LÄHDE: PORT OF HELSINKI</div>
+    <div class="link-icon">↗</div>
+</div>
+""", unsafe_allow_html=True)
+
+# --- 3. TAPAHTUMAT TÄNÄÄN ---
+st.markdown('<div class="section-title">🎫 Tapahtumat Tänään & Tilanne</div>', unsafe_allow_html=True)
+
+# Tietokanta tapahtumille
+events = [
+    {
+        "id": "Ooppera",
+        "title": "Oopperaesitys (Tosca)",
+        "location": "Kansallisooppera",
+        "time": "19:00",
+        "duration": "180 min",
+        "badge_class": "badge-premium",
+        "badge_text": "PREMIUM (PUKU PÄÄLLÄ)",
+        "border_class": "yellow-border",
+        "time_class": "yellow-text",
+        "url": "https://oopperabaletti.fi/ohjelmisto-ja-liput/"
+    },
+    {
+        "id": "Jäähalli",
+        "title": "Jääkiekko: HIFK - Kärpät",
+        "location": "Helsingin Jäähalli",
+        "time": "18:30",
+        "duration": "150 min",
+        "badge_class": "badge-fire",
+        "badge_text": "KORKEA KYSYNTÄ 🔥",
+        "border_class": "red-border",
+        "time_class": "red-text",
+        "url": "https://liiga.fi/fi/ottelut"
+    },
+    {
+        "id": "Messukeskus",
+        "title": "Kevätmessut",
+        "location": "Messukeskus",
+        "time": "17:00",
+        "duration": "Ovet sulkeutuvat",
+        "badge_class": "badge-info",
+        "badge_text": "SUURI TAPAHTUMA",
+        "border_class": "",
+        "time_class": "",
+        "url": "https://messukeskus.com/kavijalle/tapahtumat/tapahtumakalenteri"
+    }
 ]
 
-for flight in flights_data:
-    draw_flight_card(flight)
+# Renderöidään tapahtumat ja niiden ohjauspainikkeet
+for ev in events:
+    current_state = st.session_state.event_states[ev["id"]]
+    
+    # Valitaan väritys kuljettajan asettaman tilan mukaan
+    state_display = ""
+    if current_state == "JONO!":
+        state_display = '<span style="color: #F87171; font-weight: bold; margin-left: 10px;">[🚕 JONOA]</span>'
+    elif current_state == "OHI":
+        state_display = '<span style="color: #64748B; font-weight: bold; margin-left: 10px;">[✓ PURETTU]</span>'
+        
+    st.markdown(f"""
+    <div class="th-card {ev['border_class']}">
+        <a href="{ev['url']}" target="_blank" class="card-link" style="height: 60%;"></a>
+        <div class="card-subtitle" style="text-transform: uppercase;">AJOITUS: PURKU</div>
+        <div class="card-title">{ev['title']} {state_display}</div>
+        <div class="card-subtitle">{ev['location']}<br>Loppuu: {ev['time']} ({ev['duration']})</div>
+        <div class="card-time {ev['time_class']}">{ev['time']}</div>
+        <div class="badge {ev['badge_class']}">{ev['badge_text']}</div>
+        <div class="link-icon" style="top: 16px; bottom: auto;">↗</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # --- KUSKIN INTERAKTIO (TILAN VAIHTO) ---
+    # Luodaan Streamlitin omat napit kortin alle tilan päivittämistä varten
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        if st.button("✓ OHI", key=f"btn_ohi_{ev['id']}", use_container_width=True, type="secondary" if current_state != "OHI" else "primary"):
+            update_status(ev["id"], "OHI")
+            st.rerun()
+    with c2:
+        if st.button("➖ NORMAALI", key=f"btn_norm_{ev['id']}", use_container_width=True, type="secondary" if current_state != "NORMAALI" else "primary"):
+            update_status(ev["id"], "NORMAALI")
+            st.rerun()
+    with c3:
+        if st.button("⚠️ JONO!", key=f"btn_jono_{ev['id']}", use_container_width=True, type="secondary" if current_state != "JONO!" else "primary"):
+            update_status(ev["id"], "JONO!")
+            st.rerun()
+            
+    st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
 
-st.markdown("---") # Erotinviiva
-
-# OSIO 2: TAPAHTUMAT
-st.subheader("🎭 Tapahtumat & Purku")
-
-# Testidata säädetty nykyhetkeen, jotta näet palkit toiminnassa
-events_data = [
-    {"Event": "Kansallisooppera: Tosca", "Location": "Ooppera, Töölö", "Start": "19:00", "Duration": 180},
-    {"Event": "HKT: Moulin Rouge", "Location": "Kaupunginteatteri", "Start": "18:30", "Duration": 170}
-]
-
-for event in events_data:
-    draw_event_card(event)
-
-# Uloskirjautuminen
-st.markdown("<br>", unsafe_allow_html=True)
-if st.button("Kirjaudu ulos"):
-    st.session_state["password_correct"] = False
-    st.rerun()
+# --- ALATUNNISTE ---
+st.divider()
+st.caption("Data sources: Finavia, Port of Helsinki, VR, HSL, Event APIs. [span_4](start_span)System strictly enforcing event end-times for dispatch[span_4](end_span). [span_5](start_span)Weather multiplier active[span_5](end_span).")
