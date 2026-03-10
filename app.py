@@ -14,6 +14,10 @@ if 'event_states' not in st.session_state:
         "Ooppera": "NORMAALI"
     }
 
+# Tilanhallinta junien asemien valintaan
+if 'selected_station' not in st.session_state:
+    st.session_state.selected_station = "HELSINKI"
+
 def update_status(event_name, new_status):
     st.session_state.event_states[event_name] = new_status
 
@@ -70,7 +74,7 @@ st.markdown("""
     .link-icon { position: absolute; right: 16px; bottom: 16px; color: #64748B; font-size: 1.2rem; z-index: 2;}
 
     /* Alueen Otsikot */
-    .section-title { font-size: 0.85rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; margin: 24px 0 12px 0; letter-spacing: 1px; }
+    .section-title { font-size: 0.85rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; margin: 24px 0 12px 0; letter-spacing: 1px; display: flex; align-items: center;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -91,13 +95,57 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Tutkalinkki: Ilmatieteen laitos, tutka Etelä-Suomi
 st.markdown('<a href="https://ilmatieteenlaitos.fi/sade-ja-pilvialueet?area=etela-suomi" target="_blank" style="color: #4ADE80; font-size: 0.8rem; text-decoration: none; z-index: 3; position: relative;">Avaa Sadetutka ↗</a>', unsafe_allow_html=True)
 
-# --- 2. SATAMAT (MERILIIKENNE) ---
-st.markdown('<div class="section-title">⛴️ Satamat (Laivat)</div>', unsafe_allow_html=True)
+# --- UUSI OSIO: JUNAT (KAUKO) ---
+st.markdown('<div class="section-title">🚆 JUNAT (KAUKO)</div>', unsafe_allow_html=True)
 
-# Linkki Averio-laivakarttaan
+# Asemien valintapainikkeet (Lovable-tyylinen toggle)
+col1, col2, col3 = st.columns(3)
+with col1:
+    if st.button("HELSINKI", use_container_width=True, type="primary" if st.session_state.selected_station == "HELSINKI" else "secondary"):
+        st.session_state.selected_station = "HELSINKI"
+        st.rerun()
+with col2:
+    if st.button("PASILA", use_container_width=True, type="primary" if st.session_state.selected_station == "PASILA" else "secondary"):
+        st.session_state.selected_station = "PASILA"
+        st.rerun()
+with col3:
+    if st.button("TIKKURILA", use_container_width=True, type="primary" if st.session_state.selected_station == "TIKKURILA" else "secondary"):
+        st.session_state.selected_station = "TIKKURILA"
+        st.rerun()
+
+# Määritetään aktiivisen aseman URL
+station_urls = {
+    "HELSINKI": "https://www.vr.fi/radalla?station=HKI&direction=ARRIVAL&stationFilters=%7B%22trainCategory%22%3A%22Long-distance%22%7D",
+    "PASILA": "https://www.vr.fi/radalla?station=PSL&direction=ARRIVAL&stationFilters=%7B%22trainCategory%22%3A%22Long-distance%22%7D",
+    "TIKKURILA": "https://www.vr.fi/radalla?station=TKL&direction=ARRIVAL&stationFilters=%7B%22trainCategory%22%3A%22Long-distance%22%7D"
+}
+active_url = station_urls[st.session_state.selected_station]
+
+# Visuaalinen indikaattori valitulle asemalle ja data (Dummy-data simuloimaan liveä)
+st.markdown(f"<p style='color: #94A3B8; font-size: 0.8rem;'>Näytetään kaukoliikenne: <strong>{st.session_state.selected_station}</strong></p>", unsafe_allow_html=True)
+
+dummy_trains = [
+    {"id": "IC 24", "route": "Rovaniemi", "time": "17:39", "status": "Aikataulussa"},
+    {"id": "IC 50", "route": "VS -> HKI", "time": "18:39", "status": "Aikataulussa"},
+    {"id": "IC 68", "route": "Oulu", "time": "18:44", "status": "Aikataulussa"}
+]
+
+for train in dummy_trains:
+    st.markdown(f"""
+    <div class="th-card">
+        <a href="{active_url}" target="_blank" class="card-link"></a>
+        <div class="card-title">{train['id']} {train['route']} <span class="live-dot" style="margin-left: 8px;"></span><span style="font-size: 0.6rem; color: #4ADE80;">LIVE</span></div>
+        <div class="card-subtitle">{train['status']}</div>
+        <div class="card-time">{train['time']}</div>
+        <div class="link-icon">↗</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# --- SATAMAT (MERILIIKENNE) ---
+st.markdown('<div class="section-title">⛴️ SATAMAT (LAIVAT)</div>', unsafe_allow_html=True)
+
 st.markdown("""
 <div class="th-card">
     <a href="https://averio.fi/laivat/" target="_blank" class="card-link"></a>
@@ -109,10 +157,10 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 3. TAPAHTUMAT TÄNÄÄN ---
-st.markdown('<div class="section-title">🎫 Tapahtumat Tänään & Tilanne</div>', unsafe_allow_html=True)
+# --- TAPAHTUMAT TÄNÄÄN ---
+st.markdown('<div class="section-title">🎫 TAPAHTUMAT TÄNÄÄN</div>', unsafe_allow_html=True)
 
-# Tarkat linkit tapahtumiin
+# Asiakirjan mukaiset päivitetyt linkit
 events = [
     {
         "id": "Messukeskus",
@@ -136,7 +184,7 @@ events = [
         "badge_text": "KORKEA KYSYNTÄ 🔥",
         "border_class": "red-border",
         "time_class": "red-text",
-        "url": "https://liiga.fi/fi/ottelut"
+        "url": "https://liiga.fi/fi/ohjelma?kausi=2025-2026&sarja=runkosarja&joukkue=hifk&kotiVieras=koti"
     },
     {
         "id": "Ooppera",
@@ -148,7 +196,7 @@ events = [
         "badge_text": "PREMIUM (PUKU PÄÄLLÄ)",
         "border_class": "yellow-border",
         "time_class": "yellow-text",
-        "url": "https://oopperabaletti.fi/kalenteri/"
+        "url": "https://oopperabaletti.fi/ohjelmisto-ja-liput/"
     }
 ]
 
@@ -173,7 +221,6 @@ for ev in events:
     </div>
     """, unsafe_allow_html=True)
     
-    # Kuskin ohjauspainikkeet tilan päivittämiseen
     c1, c2, c3 = st.columns(3)
     with c1:
         if st.button("✓ OHI", key=f"btn_ohi_{ev['id']}", use_container_width=True, type="secondary" if current_state != "OHI" else "primary"):
